@@ -16,7 +16,7 @@ impl LexedToken {
             span: Span {
                 start: start,
                 end: end,
-            }
+            },
         }
     }
 
@@ -64,7 +64,7 @@ impl<'a> StringReader<'a> {
     pub fn is_eol(&self) -> bool {
         match self.curr_char {
             Some('\n') => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -205,45 +205,35 @@ mod tests {
     use parser::token::Token;
     use parser::errors::SyntaxError;
 
-    fn expected_token(token: Token, start: BytePos, end: BytePos) -> Result<LexedToken, SyntaxError> {
+    fn expected_token(token: Token,
+                      start: BytePos,
+                      end: BytePos)
+                      -> Result<LexedToken, SyntaxError> {
         Ok(LexedToken::new(token, start, end))
     }
 
     #[test]
     fn retuns_eof_for_empty_string() {
-        assert_eq!(
-            expected_token(Token::Eof, 0, 0),
-            Lexer::new("").next_token()
-        );
+        assert_eq!(expected_token(Token::Eof, 0, 0),
+                   Lexer::new("").next_token());
     }
 
     #[test]
     fn retuns_whitespace_and_eof_for_string_with_only_whitespace() {
         let mut reader = Lexer::new("   ");
 
-        assert_eq!(
-            expected_token(Token::Whitespace, 0, 2),
-            reader.next_token()
-        );
+        assert_eq!(expected_token(Token::Whitespace, 0, 2), reader.next_token());
 
-        assert_eq!(
-            expected_token(Token::Eof, 2, 2),
-            reader.next_token()
-        );
+        assert_eq!(expected_token(Token::Eof, 2, 2), reader.next_token());
     }
 
     #[test]
     fn returns_comment_token_for_dash_dash_comment_only() {
         let mut reader = Lexer::new("-- comment");
 
-        assert_eq!(
-            expected_token(Token::Comment(" comment".to_string()), 0, 10),
-            reader.next_token()
-        );
+        assert_eq!(expected_token(Token::Comment(" comment".to_string()), 0, 10),
+                   reader.next_token());
 
-        assert_eq!(
-            expected_token(Token::Eof, 10, 10),
-            reader.next_token()
-        );
+        assert_eq!(expected_token(Token::Eof, 10, 10), reader.next_token());
     }
 }
