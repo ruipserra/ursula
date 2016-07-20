@@ -1,4 +1,4 @@
-use parser::token::Token;
+use parser::token::{Token, Keyword};
 use parser::errors::SyntaxError;
 
 pub type BytePos = usize;
@@ -131,28 +131,31 @@ impl<'a> StringReader<'a> {
 
 pub struct Lexer<'a> {
     reader: StringReader<'a>,
-    curr_tok: Option<LexedToken>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Lexer<'a> {
-        Lexer {
-            reader: StringReader::new(input),
-            curr_tok: None,
-        }
+        Lexer { reader: StringReader::new(input) }
     }
 
     pub fn next_token(&mut self) -> Result<LexedToken, SyntaxError> {
-        // This is really verbose. There's probably a better way to do this...
-        if let Some(t) = self.scan_whitespace() {
-            Ok(t)
-        } else if let Some(t) = self.scan_comment() {
-            Ok(t)
-        } else if let Some(t) = self.scan_eof() {
+        if let Some(t) = self.next_token_opt() {
             Ok(t)
         } else {
-            // FIXME Dummy return value. This is just to satisfy the compiler for now.
-            Ok(LexedToken::new_at(Token::Ident("foo".to_owned()), 0))
+            self.next_token_res()
+        }
+    }
+
+    fn next_token_opt(&mut self) -> Option<LexedToken> {
+        self.scan_eof()
+            .or_else(|| self.scan_whitespace())
+            .or_else(|| self.scan_comment())
+    }
+
+    fn next_token_res(&mut self) -> Result<LexedToken, SyntaxError> {
+        match self.reader.curr_char {
+            c if is_ident_start(c) => self.scan_keyword_or_unquoted_identifier(),
+            _ => unimplemented!(),
         }
     }
 
@@ -189,6 +192,32 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn scan_keyword_or_unquoted_identifier(&mut self) -> Result<LexedToken, SyntaxError> {
+        assert!(is_ident_start(self.reader.curr_char));
+
+        let start = self.reader.curr_pos;
+        let mut ident = String::new();
+
+        ident.push(self.reader.curr_char.unwrap());
+        self.reader.advance();
+
+        while is_ident_cont(self.reader.curr_char) {
+            ident.push(self.reader.curr_char.unwrap());
+            self.reader.advance();
+        }
+
+        // Keywords and unquoted identifiers are case insensitive.
+        ident = ident.to_lowercase();
+
+        let tok = if let Some(keyword) = Keyword::from_str(&ident) {
+            Token::Keyword(keyword)
+        } else {
+            Token::Ident(ident)
+        };
+
+        Ok(LexedToken::new(tok, start, self.reader.prev_pos))
+    }
+
     fn consume_whitespace(&mut self) {
         self.reader.advance_while(char::is_whitespace);
     }
@@ -198,11 +227,35 @@ fn is_whitespace(c: Option<char>) -> bool {
     c.is_some() && c.unwrap().is_whitespace()
 }
 
+fn is_ident_start(c: Option<char>) -> bool {
+    c.is_some() &&
+    match c.unwrap() {
+        'a'...'z' |
+        'A'...'Z' |
+        '\u{80}'...'\u{FF}' |
+        '_' => true,
+        _ => false,
+    }
+}
+
+fn is_ident_cont(c: Option<char>) -> bool {
+    c.is_some() &&
+    match c.unwrap() {
+        'a'...'z' |
+        'A'...'Z' |
+        '\u{80}'...'\u{FF}' |
+        '0'...'9' |
+        '_' |
+        '$' => true,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use parser::token::Token;
+    use parser::token::{Token, Keyword};
     use parser::errors::SyntaxError;
 
     fn expected_token(token: Token,
@@ -220,20 +273,64 @@ mod tests {
 
     #[test]
     fn retuns_whitespace_and_eof_for_string_with_only_whitespace() {
-        let mut reader = Lexer::new("   ");
+        let mut lexer = Lexer::new("   ");
 
-        assert_eq!(expected_token(Token::Whitespace, 0, 2), reader.next_token());
-
-        assert_eq!(expected_token(Token::Eof, 2, 2), reader.next_token());
+        assert_eq!(expected_token(Token::Whitespace, 0, 2), lexer.next_token());
+        assert_eq!(expected_token(Token::Eof, 2, 2), lexer.next_token());
     }
 
     #[test]
     fn returns_comment_token_for_dash_dash_comment_only() {
-        let mut reader = Lexer::new("-- comment");
+        let mut lexer = Lexer::new("-- comment");
 
         assert_eq!(expected_token(Token::Comment(" comment".to_string()), 0, 10),
-                   reader.next_token());
+                   lexer.next_token());
 
-        assert_eq!(expected_token(Token::Eof, 10, 10), reader.next_token());
+        assert_eq!(expected_token(Token::Eof, 10, 10), lexer.next_token());
+    }
+
+    #[test]
+    fn recognizes_keywords_regardless_of_case() {
+        let mut lexer = Lexer::new("select FROM WhErE");
+
+        assert_eq!(expected_token(Token::Keyword(Keyword::Select), 0, 5),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 6, 6), lexer.next_token());
+
+        assert_eq!(expected_token(Token::Keyword(Keyword::From), 7, 10),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 11, 11),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Keyword(Keyword::Where), 12, 16),
+                   lexer.next_token());
+    }
+
+    #[test]
+    fn returns_downcased_unquoted_identifiers() {
+        let mut lexer = Lexer::new("_foo BaR IDENT2 ídèñt$3_");
+
+        assert_eq!(expected_token(Token::Ident("_foo".to_string()), 0, 3),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 4, 4), lexer.next_token());
+
+        assert_eq!(expected_token(Token::Ident("bar".to_string()), 5, 7),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 8, 8), lexer.next_token());
+
+        assert_eq!(expected_token(Token::Ident("ident2".to_string()), 9, 14),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 15, 15),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Ident("ídèñt$3_".to_string()), 16, 26),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Eof, 26, 26), lexer.next_token());
     }
 }

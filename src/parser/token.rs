@@ -15,3 +15,14 @@ pub enum Keyword {
     Select,
     Where,
 }
+
+impl Keyword {
+    pub fn from_str(s: &str) -> Option<Keyword> {
+        match s.to_lowercase().as_str() {
+            "from" => Some(Keyword::From),
+            "select" => Some(Keyword::Select),
+            "where" => Some(Keyword::Where),
+            _ => None,
+        }
+    }
+}
