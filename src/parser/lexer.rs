@@ -118,6 +118,21 @@ impl<'a> StringReader<'a> {
         s
     }
 
+    pub fn read_while<F: Fn(char) -> bool>(&mut self, test: F) -> String {
+        let mut s = String::new();
+
+        while let Some(c) = self.curr_char {
+            if test(c) {
+                s.push(c);
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        s
+    }
+
     /// Returns `Some(c)` containing the char at the specified byte position if found,
     /// otherwise returns None.
     fn char_at(&self, pos: BytePos) -> Option<char> {
@@ -142,6 +157,7 @@ impl<'a> Lexer<'a> {
         if let Some(t) = self.next_token_opt() {
             Ok(t)
         } else {
+            assert!(self.reader.curr_char.is_some());
             self.next_token_res()
         }
     }
@@ -154,13 +170,15 @@ impl<'a> Lexer<'a> {
 
     fn next_token_res(&mut self) -> Result<LexedToken, SyntaxError> {
         match self.reader.curr_char {
-            c if is_ident_start(c) => self.scan_keyword_or_unquoted_identifier(),
+            Some(c) if is_ident_start(c) => self.scan_keyword_or_unquoted_identifier(),
             _ => unimplemented!(),
         }
     }
 
     fn scan_whitespace(&mut self) -> Option<LexedToken> {
-        if is_whitespace(self.reader.curr_char) {
+        let c = self.reader.curr_char.unwrap_or('\0');
+
+        if c.is_whitespace() {
             let start = self.reader.curr_pos;
             self.consume_whitespace();
             Some(LexedToken::new(Token::Whitespace, start, self.reader.prev_pos))
@@ -193,21 +211,12 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_keyword_or_unquoted_identifier(&mut self) -> Result<LexedToken, SyntaxError> {
-        assert!(is_ident_start(self.reader.curr_char));
+        assert!(is_ident_start(self.reader.curr_char.unwrap()));
 
         let start = self.reader.curr_pos;
-        let mut ident = String::new();
-
-        ident.push(self.reader.curr_char.unwrap());
-        self.reader.advance();
-
-        while is_ident_cont(self.reader.curr_char) {
-            ident.push(self.reader.curr_char.unwrap());
-            self.reader.advance();
-        }
-
-        // Keywords and unquoted identifiers are case insensitive.
-        ident = ident.to_lowercase();
+        let ident = self.reader
+            .read_while(is_ident_cont)
+            .to_lowercase(); // Keywords and unquoted identifiers are case insensitive.
 
         let tok = if let Some(keyword) = Keyword::from_str(&ident) {
             Token::Keyword(keyword)
@@ -223,13 +232,8 @@ impl<'a> Lexer<'a> {
     }
 }
 
-fn is_whitespace(c: Option<char>) -> bool {
-    c.is_some() && c.unwrap().is_whitespace()
-}
-
-fn is_ident_start(c: Option<char>) -> bool {
-    c.is_some() &&
-    match c.unwrap() {
+fn is_ident_start(c: char) -> bool {
+    match c {
         'a'...'z' |
         'A'...'Z' |
         '\u{80}'...'\u{FF}' |
@@ -238,9 +242,8 @@ fn is_ident_start(c: Option<char>) -> bool {
     }
 }
 
-fn is_ident_cont(c: Option<char>) -> bool {
-    c.is_some() &&
-    match c.unwrap() {
+fn is_ident_cont(c: char) -> bool {
+    match c {
         'a'...'z' |
         'A'...'Z' |
         '\u{80}'...'\u{FF}' |
