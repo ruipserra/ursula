@@ -1,4 +1,4 @@
-use parser::token::{Token, Keyword};
+use parser::token::{Token, Keyword, Op};
 use parser::errors::SyntaxError;
 
 pub type BytePos = usize;
@@ -86,6 +86,13 @@ impl<'a> StringReader<'a> {
         }
     }
 
+    /// Advances the string reader's position by the given number of bytes.
+    pub fn advance_bytes(&mut self, n_bytes: usize) {
+        self.prev_pos = self.curr_pos;
+        self.curr_pos += n_bytes;
+        self.curr_char = self.char_at(self.curr_pos);
+    }
+
     /// Returns the next char to be read without advancing the string reader.
     pub fn peek_next(&self) -> Option<char> {
         if self.curr_char.is_some() {
@@ -166,6 +173,7 @@ impl<'a> Lexer<'a> {
         self.scan_eof()
             .or_else(|| self.scan_whitespace())
             .or_else(|| self.scan_comment())
+            .or_else(|| self.scan_operator())
     }
 
     fn next_token_res(&mut self) -> Result<LexedToken, SyntaxError> {
@@ -207,6 +215,54 @@ impl<'a> Lexer<'a> {
             Some(LexedToken::new_at(Token::Eof, self.reader.prev_pos))
         } else {
             None
+        }
+    }
+
+    fn scan_operator(&mut self) -> Option<LexedToken> {
+        self.scan_multi_byte_operator()
+            .or_else(|| self.scan_single_byte_operator())
+    }
+
+    fn scan_single_byte_operator(&mut self) -> Option<LexedToken> {
+        let curr = self.reader.curr_char.unwrap();
+
+        if !is_single_byte_op_char(curr) {
+            return None;
+        }
+
+        match Op::from_str(curr.to_string().as_str()) {
+            Some(op) => {
+                let pos = self.reader.curr_pos;
+                self.reader.advance();
+                Some(LexedToken::new_at(Token::Op(op), pos))
+            }
+            _ => None,
+        }
+    }
+
+    fn scan_multi_byte_operator(&mut self) -> Option<LexedToken> {
+        let curr = self.reader.curr_char.unwrap();
+        if !is_multi_byte_op_start(curr) {
+            return None;
+        }
+
+        let mut s = curr.to_string();
+
+        let next = self.reader.peek_next().unwrap_or('\0');
+        if is_multi_byte_op_cont(next) {
+            s.push(next);
+        }
+
+        match Op::from_str(s.as_str()) {
+            Some(op) => {
+                let start = self.reader.curr_pos;
+                let end = start + s.len() - 1;
+
+                self.reader.advance_bytes(s.len());
+
+                Some(LexedToken::new(Token::Op(op), start, end))
+            }
+            _ => None,
         }
     }
 
@@ -254,11 +310,32 @@ fn is_ident_cont(c: char) -> bool {
     }
 }
 
+fn is_single_byte_op_char(c: char) -> bool {
+    match c {
+        '+' | '-' | '*' | '/' | '%' | '=' | '<' | '>' => true,
+        _ => false,
+    }
+}
+
+fn is_multi_byte_op_start(c: char) -> bool {
+    match c {
+        '!' | '<' | '>' => true,
+        _ => false,
+    }
+}
+
+fn is_multi_byte_op_cont(c: char) -> bool {
+    match c {
+        '=' | '>' => true,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use parser::token::{Token, Keyword};
+    use parser::token::{Token, Keyword, Op};
     use parser::errors::SyntaxError;
 
     fn expected_token(token: Token,
@@ -335,5 +412,123 @@ mod tests {
                    lexer.next_token());
 
         assert_eq!(expected_token(Token::Eof, 26, 26), lexer.next_token());
+    }
+
+    #[test]
+    fn recognizes_operators_surrounded_by_whitespace() {
+        let mut lexer = Lexer::new("+ - * / % = != <> <= >= < >");
+
+        assert_eq!(expected_token(Token::Op(Op::Plus), 0, 0),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 1, 1),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Minus), 2, 2),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 3, 3),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Star), 4, 4),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 5, 5),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Slash), 6, 6),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 7, 7),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Percent), 8, 8),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 9, 9),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Eq), 10, 10),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 11, 11),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::NotEq), 12, 13),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 14, 14),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::NotEq), 15, 16),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 17, 17),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::LtEq), 18, 19),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 20, 20),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::GtEq), 21, 22),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 23, 23),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Lt), 24, 24),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Whitespace, 25, 25),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Gt), 26, 26),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Eof, 26, 26),
+                   lexer.next_token());
+    }
+
+    #[test]
+    fn recognizes_operators_even_when_joined_together() {
+        let mut lexer = Lexer::new("+-*/%=!=<><=>=><");
+
+        assert_eq!(expected_token(Token::Op(Op::Plus), 0, 0),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Minus), 1, 1),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Star), 2, 2),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Slash), 3, 3),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Percent), 4, 4),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Eq), 5, 5),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::NotEq), 6, 7),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::NotEq), 8, 9),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::LtEq), 10, 11),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::GtEq), 12, 13),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Gt), 14, 14),
+                   lexer.next_token());
+
+        assert_eq!(expected_token(Token::Op(Op::Lt), 15, 15),
+                   lexer.next_token());
     }
 }
