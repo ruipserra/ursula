@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Token {
     Keyword(Keyword),
@@ -16,17 +18,6 @@ pub enum Keyword {
     Where,
 }
 
-impl Keyword {
-    pub fn from_str(s: &str) -> Option<Keyword> {
-        match s.to_lowercase().as_str() {
-            "from" => Some(Keyword::From),
-            "select" => Some(Keyword::Select),
-            "where" => Some(Keyword::Where),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum Op {
     Minus,
@@ -42,22 +33,39 @@ pub enum Op {
     GtEq,
 }
 
-impl Op {
-    pub fn from_str(s: &str) -> Option<Op> {
-        match s {
-            "+" => Some(Op::Plus),
-            "-" => Some(Op::Minus),
-            "*" => Some(Op::Star),
-            "/" => Some(Op::Slash),
-            "%" => Some(Op::Percent),
-            "=" => Some(Op::Eq),
-            "<" => Some(Op::Lt),
-            ">" => Some(Op::Gt),
-            "!=" => Some(Op::NotEq),
-            "<>" => Some(Op::NotEq),
-            "<=" => Some(Op::LtEq),
-            ">=" => Some(Op::GtEq),
-            _ => None,
+impl FromStr for Keyword {
+    type Err = TokenParseError;
+
+    fn from_str(s: &str) -> Result<Keyword, TokenParseError> {
+        match s.to_lowercase().as_str() {
+            "from" => Ok(Keyword::From),
+            "select" => Ok(Keyword::Select),
+            "where" => Ok(Keyword::Where),
+            _ => Err(TokenParseError),
         }
     }
 }
+
+impl FromStr for Op {
+    type Err = TokenParseError;
+
+    fn from_str(s: &str) -> Result<Op, TokenParseError> {
+        match s {
+            "+" => Ok(Op::Plus),
+            "-" => Ok(Op::Minus),
+            "*" => Ok(Op::Star),
+            "/" => Ok(Op::Slash),
+            "%" => Ok(Op::Percent),
+            "=" => Ok(Op::Eq),
+            "<" => Ok(Op::Lt),
+            ">" => Ok(Op::Gt),
+            "!=" => Ok(Op::NotEq),
+            "<>" => Ok(Op::NotEq),
+            "<=" => Ok(Op::LtEq),
+            ">=" => Ok(Op::GtEq),
+            _ => Err(TokenParseError),
+        }
+    }
+}
+
+pub struct TokenParseError;

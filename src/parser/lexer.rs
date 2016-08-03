@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use parser::token::{Token, Keyword, Op};
 use parser::errors::SyntaxError;
 
@@ -231,7 +233,7 @@ impl<'a> Lexer<'a> {
         }
 
         match Op::from_str(curr.to_string().as_str()) {
-            Some(op) => {
+            Ok(op) => {
                 let pos = self.reader.curr_pos;
                 self.reader.advance();
                 Some(LexedToken::new_at(Token::Op(op), pos))
@@ -254,7 +256,7 @@ impl<'a> Lexer<'a> {
         }
 
         match Op::from_str(s.as_str()) {
-            Some(op) => {
+            Ok(op) => {
                 let start = self.reader.curr_pos;
                 let end = start + s.len() - 1;
 
@@ -274,7 +276,7 @@ impl<'a> Lexer<'a> {
             .read_while(is_ident_cont)
             .to_lowercase(); // Keywords and unquoted identifiers are case insensitive.
 
-        let tok = if let Some(keyword) = Keyword::from_str(&ident) {
+        let tok = if let Ok(keyword) = Keyword::from_str(&ident) {
             Token::Keyword(keyword)
         } else {
             Token::Ident(ident)
