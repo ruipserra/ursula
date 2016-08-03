@@ -5,9 +5,12 @@ use parser::errors::SyntaxError;
 
 pub type BytePos = usize;
 
+/// Encapsulates a token and the byte positions it spans.
 #[derive(Debug, PartialEq, Eq)]
 pub struct LexedToken {
+    /// The token that was found.
     pub token: Token,
+    /// Where the token was found.
     pub span: Span,
 }
 
@@ -15,10 +18,7 @@ impl LexedToken {
     fn new(token: Token, start: BytePos, end: BytePos) -> LexedToken {
         LexedToken {
             token: token,
-            span: Span {
-                start: start,
-                end: end,
-            },
+            span: Span::new(start, end),
         }
     }
 
@@ -27,10 +27,24 @@ impl LexedToken {
     }
 }
 
+/// Represents a byte range of a text segment.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Span {
+    /// Byte position where the text segment starts.
     pub start: BytePos,
+    /// Byte position where the text segment ends.
     pub end: BytePos,
+}
+
+impl Span {
+    pub fn new(start: BytePos, end: BytePos) -> Span {
+        assert!(start <= end);
+
+        Span {
+            start: start,
+            end: end,
+        }
+    }
 }
 
 pub struct StringReader<'a> {
@@ -104,15 +118,21 @@ impl<'a> StringReader<'a> {
         }
     }
 
+    /// Returns `true` if the current `char` is the same as the given `char`,
+    /// returns `false` otherwise.
     pub fn curr_is(&self, c: char) -> bool {
         self.curr_char.is_some() && self.curr_char.unwrap() == c
     }
 
+    /// Returns `true` if the next `char` is the same as the given `char`,
+    /// returns `false` otherwise.
     pub fn next_is(&self, c: char) -> bool {
         let next_char = self.peek_next();
         next_char.is_some() && next_char.unwrap() == c
     }
 
+    /// Reads the input into a `String` until a new line is found,
+    /// advancing the current position. Returns the read input.
     pub fn read_line(&mut self) -> String {
         let mut s = String::new();
 
@@ -127,6 +147,8 @@ impl<'a> StringReader<'a> {
         s
     }
 
+    /// Reads the input into a `String` while the given condition is met,
+    /// advancing the current position. Returns the read input.
     pub fn read_while<F: Fn(char) -> bool>(&mut self, test: F) -> String {
         let mut s = String::new();
 
@@ -162,6 +184,7 @@ impl<'a> Lexer<'a> {
         Lexer { reader: StringReader::new(input) }
     }
 
+    /// Consumes input until a token is found, and returns that token.
     pub fn next_token(&mut self) -> Result<LexedToken, SyntaxError> {
         if let Some(t) = self.next_token_opt() {
             Ok(t)
